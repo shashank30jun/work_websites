@@ -35,3 +35,10 @@ def validate_quantity(qty_val: Union[str, int], min_qty: int = 1, max_qty: int =
         return (True, q) if min_qty <= q <= max_qty else (False, 0)
     except (ValueError, TypeError):
         return False, 0
+
+def filter_digits_only(val: str, max_len: int) -> str:
+    """Strips all non-numeric characters and truncates to max_len."""
+    if not val:
+        return ""
+    digits = re.sub(r"\D", "", str(val))
+    return digits[:max_len]

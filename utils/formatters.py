@@ -33,6 +33,23 @@ def generate_sequential_id(
 
     return f"{prefix}_{formatted_seq}_{date_str}"
 
+import streamlit as st
+
+def get_persisted_form_state(form_key: str, default_values: dict) -> dict:
+    state_values = {}
+    for key, default in default_values.items():
+        state_key = f"{form_key}_{key}"
+        if state_key not in st.session_state:
+            st.session_state[state_key] = default
+        state_values[key] = state_key
+    return state_values
+
+def reset_persisted_form_state(form_key: str, default_values: dict):
+    for key, default in default_values.items():
+        state_key = f"{form_key}_{key}"
+        if state_key in st.session_state:
+            st.session_state[state_key] = default
+
 def get_status_badge(status: str) -> str:
     colors = {
         "Available": ("#e8f5e9", "#2e7d32"),

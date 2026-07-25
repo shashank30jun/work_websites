@@ -1,6 +1,6 @@
 """
-Sanskar Operations View: Form Registration & AWGP / Shantikunj Analytics Dashboard
-Optimized Modular Architecture with Generic Sequential ID Tracking (SNKQR_0001_DDMMYYYY)
+Sanskar Operations View: Form Registration & Analytics Dashboard
+Optimized Session State Persistence & Browser-Enforced Input Validation
 """
 
 from datetime import datetime
@@ -10,16 +10,54 @@ import streamlit as st
 
 from config import CONFIG
 from models.sanskar_list import SanskarRecord
-from utils.formatters import generate_sequential_id
-from utils.validators import sanitize_input, validate_pincode, validate_phone
+from utils.formatters import (
+    generate_sequential_id,
+    get_persisted_form_state,
+    reset_persisted_form_state,
+)
+from utils.validators import (
+    sanitize_input,
+    validate_pincode,
+    validate_phone,
+)
 
+# Custom CSS: Cleans up form layout, placeholder text, and hides st.number_input spinner arrows
 FORM_CSS = """
 <style>
 input::placeholder, textarea::placeholder { font-size: 0.82rem !important; opacity: 0.6 !important; color: #6b7280 !important; }
 div[data-testid="stFormInstructions"], small[data-testid="stFormInstructions"], span[data-testid="stFormInstructions"] { display: none !important; }
 .stTextInput label, .stSelectbox label, .stNumberInput label, .stDateInput label { font-weight: 500 !important; font-size: 0.90rem !important; }
+
+/* Forcefully hide + / - step buttons in all browsers for st.number_input */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none !important; 
+    margin: 0 !important; 
+    display: none !important; 
+}
+input[type=number] {
+    -moz-appearance: textfield !important;
+}
+div[data-baseweb="spinbutton"] button {
+    display: none !important;
+}
 </style>
 """
+# Default values aligned with st.number_input types (None for numeric fields)
+SANSKAR_FORM_DEFAULTS = {
+    "sanskar_name": "",
+    "sanskar_date": datetime.now(),
+    "requester_name": "",
+    "relation_type": "S/O",
+    "guardian_name": "",
+    "requester_contact": None,
+    "address": "",
+    "pin_code": None,
+    "requester_type": "Student",
+    "no_of_people": 10,
+    "assigned_volunteer": "Auto-assign",
+    "notes": "",
+}
 
 
 # ==============================================================================
@@ -63,43 +101,105 @@ def _create_bar_chart(x, y, orientation="v", colors=None, x_title="", y_title=""
     return fig
 
 
+def _start_new_registration_callback():
+    """Safely clears form drafts before widgets re-instantiate."""
+    reset_persisted_form_state("sanskar_reg", SANSKAR_FORM_DEFAULTS)
+    st.session_state["sanskar_form_submitted"] = False
+    st.session_state["sanskar_last_req_id"] = ""
+    st.session_state["sanskar_last_time"] = ""
+
+
 # ==============================================================================
 # 2. SUB-VIEW 1: FORM REGISTRATION
 # ==============================================================================
 
 def _render_registration_form(sheets_service, sanskar_list: list):
+    # Heal stale session state types from previous runs
+    for k in ["sanskar_reg_requester_contact", "sanskar_reg_pin_code"]:
+        if k in st.session_state and isinstance(st.session_state[k], str):
+            st.session_state[k] = None
+
+    if "sanskar_form_submitted" not in st.session_state:
+        st.session_state["sanskar_form_submitted"] = False
+
+    # IF FORM SUBMITTED SUCCESSFULLY: Show Success Screen
+    if st.session_state["sanskar_form_submitted"]:
+        req_id = st.session_state.get("sanskar_last_req_id", "")
+        created_time = st.session_state.get("sanskar_last_time", "")
+
+        st.success(
+            f"✅ **Sanskar event registered successfully!**\n\n"
+            f"📌 **Request ID:** `{req_id}`  \n"
+            f"🕒 **Created Date & Time:** `{created_time}`"
+        )
+
+        st.info("The record has been saved to Google Sheets. Click below to enter a new request.")
+        st.button(
+            "➕ Register Another Sanskar Event",
+            type="primary",
+            on_click=_start_new_registration_callback,
+            use_container_width=True,
+        )
+        return
+
+    # ELSE: RENDER REGISTRATION FORM
+    keys = get_persisted_form_state("sanskar_reg", SANSKAR_FORM_DEFAULTS)
     vol_options = ["Auto-assign"] + _get_active_volunteers(sheets_service)
 
-    # Generate sequential ID using SNKQR prefix
     generated_req_id = generate_sequential_id("SNKQR", sanskar_list, id_attribute="req_id")
     current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    with st.form("sanskar_form", clear_on_submit=True):
+    with st.form("sanskar_form", clear_on_submit=False,enter_to_submit=False):
         st.markdown("##### **1️⃣ System Auto-Fields & Sanskar Date**")
         c_meta1, c_meta2, c_meta3 = st.columns([2, 2, 2], gap="medium")
         c_meta1.text_input("Request ID (Auto)", value=generated_req_id, disabled=True)
         c_meta2.text_input("Created Timestamp", value=current_time_str, disabled=True)
-        sanskar_date = c_meta3.date_input("Date of Sanskar (संस्कार तिथि) *", datetime.now())
+        sanskar_date = c_meta3.date_input("Date of Sanskar (संस्कार तिथि) *", key=keys["sanskar_date"])
 
-        sanskar_name = st.text_input("Sanskar Name *", placeholder="e.g., Punsavan, Namkaran, Vidyarambha")
+        sanskar_name = st.text_input("Sanskar Name *", placeholder="e.g., Punsavan, Namkaran, Vidyarambha", key=keys["sanskar_name"])
 
         st.markdown("##### **2️⃣ Devotee & Family Details (आवेदक एवं अभिभावक)**")
         c3, c4, c5, c6 = st.columns([2, 1, 2, 2], gap="small")
-        requester_name = c3.text_input("Devotee Full Name *", placeholder="Name of devotee/family")
-        relation_type = c4.selectbox("Relation", ["S/O", "D/O", "W/O", "H/O", "C/O"])
-        guardian_name = c5.text_input("Father / Guardian Name", placeholder="Relative or Parent Name")
-        requester_contact = c6.text_input("Contact Number *", placeholder="10-digit mobile number")
+        requester_name = c3.text_input("Devotee Full Name *", placeholder="Name of devotee/family", key=keys["requester_name"])
+        relation_type = c4.selectbox("Relation", ["S/O", "D/O", "W/O", "H/O", "C/O"], key=keys["relation_type"])
+        guardian_name = c5.text_input("Father / Guardian Name", placeholder="Relative or Parent Name", key=keys["guardian_name"])
+
+        # Strictly numeric input (browser blocks alphabetic keystrokes)
+        requester_contact_num = c6.number_input(
+            "Contact Number *",
+            min_value=0,
+            max_value=9999999999,
+            value=None,
+            step=1,
+            format="%d",
+            placeholder="10-digit mobile number",
+            key=keys["requester_contact"],
+        )
+        requester_contact = str(requester_contact_num) if requester_contact_num is not None else ""
 
         c7, c8, c9 = st.columns([3, 1.5, 2], gap="small")
-        address = c7.text_input("Address (स्थान / पता)", placeholder="Complete event address")
-        pin_code = c8.text_input("Pin Code *", placeholder="6-digit PIN", max_chars=6)
-        requester_type = c9.selectbox("Requester Category", ["Student", "Teacher", "Parent", "Volunteer / कार्यकर्ता", "Other"])
+        address = c7.text_input("Address (स्थान / पता)", placeholder="Complete event address", key=keys["address"])
+
+        # Strictly numeric input (browser blocks alphabetic keystrokes)
+        pin_code_num = c8.number_input(
+            "Pin Code *",
+            min_value=0,
+            max_value=999999,
+            value=None,
+            step=1,
+            format="%d",
+            placeholder="6-digit PIN",
+            key=keys["pin_code"],
+        )
+        pin_code = str(pin_code_num) if pin_code_num is not None else ""
+
+        requester_type = c9.selectbox("Requester Category", ["Student", "Teacher", "Parent", "Volunteer / कार्यकर्ता", "Other"], key=keys["requester_type"])
 
         st.markdown("##### **3️⃣ Coordination & Logistics (व्यवस्थापन)**")
         ca, cb = st.columns(2, gap="large")
-        no_of_people = ca.number_input("Expected Attendance (जन सहभागिता)", min_value=1, value=10, step=5)
-        assigned_volunteer = cb.selectbox("Assigned Volunteer (कर्मठ कार्यकर्ता)", vol_options)
-        notes = st.text_area("Event Notes / Remarks", placeholder="Special arrangements or notes...", max_chars=300)
+        no_of_people = ca.number_input("Expected Attendance (जन सहभागिता)", min_value=1, step=5, key=keys["no_of_people"])
+        assigned_volunteer = cb.selectbox("Assigned Volunteer (कर्मठ कार्यकर्ता)", vol_options, key=keys["assigned_volunteer"])
+        notes = st.text_area("Event Notes / Remarks", placeholder="Special arrangements or notes...", max_chars=300, key=keys["notes"])
 
         st.divider()
         _, btn_col = st.columns([3, 1])
@@ -112,13 +212,21 @@ def _render_registration_form(sheets_service, sanskar_list: list):
         if not requester_name or not requester_name.strip():
             errors.append("Requester Name is required.")
 
-        valid_phone, phone_res = validate_phone(requester_contact)
-        if not valid_phone:
-            errors.append(phone_res)
+        # Strict 10-Digit Mobile Validation
+        if len(requester_contact) != 10:
+            errors.append("Contact Number must be strictly a 10-digit mobile number.")
+        else:
+            valid_phone, phone_res = validate_phone(requester_contact)
+            if not valid_phone:
+                errors.append(phone_res)
 
-        valid_pin, pin_res = validate_pincode(pin_code)
-        if not valid_pin:
-            errors.append(pin_res)
+        # Strict 6-Digit PIN Validation
+        if len(pin_code) != 6:
+            errors.append("Pin Code must be strictly a 6-digit PIN code.")
+        else:
+            valid_pin, pin_res = validate_pincode(pin_code)
+            if not valid_pin:
+                errors.append(pin_res)
 
         if errors:
             for err in errors:
@@ -143,7 +251,13 @@ def _render_registration_form(sheets_service, sanskar_list: list):
             )
             try:
                 sheets_service.append_row(CONFIG.WORKSHEET_SANSKAR_LIST, record.to_row())
-                st.success(f"✅ Sanskar event registered successfully! Request ID: **{generated_req_id}**")
+
+                # Set success flags for screen transition
+                st.session_state["sanskar_form_submitted"] = True
+                st.session_state["sanskar_last_req_id"] = generated_req_id
+                st.session_state["sanskar_last_time"] = current_time_str
+
+                st.rerun()
             except Exception as e:
                 st.error(f"Failed to submit: {str(e)}")
 
