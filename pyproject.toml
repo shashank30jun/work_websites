@@ -1,0 +1,28 @@
+[project]
+name = "bsgp-book-platform"
+version = "1.0.0"
+description = "BSGP Book Redistribution Platform for DSVV"
+requires-python = ">=3.10"
+dependencies = [
+    "streamlit>=1.40.0",
+    "pandas>=2.2.2",
+    "gspread>=6.1.2",
+    "google-auth>=2.35.0",
+    "google-auth-oauthlib>=1.2.1",
+    "google-auth-httplib2>=0.2.0",
+    "google-api-python-client>=2.150.0",  # ← ADD THIS LINE
+    "python-dotenv>=1.0.1",
+    "stqdm>=0.0.5",
+    "streamlit-extras>=0.4.7",
+    "plotly>=5.24.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "black>=24.0",
+    "ruff>=0.5.0",
+]
+
+[tool.uv]
+python-preference = "only-managed"

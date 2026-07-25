@@ -1,0 +1,12 @@
+/* Custom styles for BSGP Platform */
+:root {
+    --primary: #1a3a2f;
+    --secondary: #2d5a4a;
+    --accent: #c9a227;
+    --bg: #f8f6f1;
+    --card-bg: #ffffff;
+}
+
+body {
+    background-color: var(--bg);
+}
