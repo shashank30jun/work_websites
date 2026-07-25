@@ -13,7 +13,6 @@ from services.sheets_service import GoogleSheetsService
 
 load_dotenv()
 
-# Page Setup
 st.set_page_config(
     page_title=CONFIG.APP_TITLE,
     page_icon=CONFIG.APP_ICON,
@@ -25,6 +24,7 @@ st.set_page_config(
 # ==============================================================================
 # 1. SERVICES & INITIALIZATION
 # ==============================================================================
+
 
 @st.cache_resource
 def get_sheets_service():
@@ -40,22 +40,28 @@ def get_sheets_service():
 def init_sheets(sheets_service):
     """Initializes sheet headers dynamically based on enabled feature flags."""
     try:
-        # Build mapping of active worksheets and their target schemas
         targets = []
         if CONFIG.SHOW_HOME or CONFIG.SHOW_CATALOG:
-            targets.extend([
-                (CONFIG.WORKSHEET_MASTER_CATALOG, SCHEMA.CATALOG.headers),
-                (CONFIG.WORKSHEET_STOCK_LEDGER, SCHEMA.LEDGER.headers),
-            ])
+            targets.extend(
+                [
+                    (CONFIG.WORKSHEET_MASTER_CATALOG, SCHEMA.CATALOG.headers),
+                    (CONFIG.WORKSHEET_STOCK_LEDGER, SCHEMA.LEDGER.headers),
+                ]
+            )
         if CONFIG.SHOW_REQUEST:
-            targets.append((CONFIG.WORKSHEET_REQUESTS, SCHEMA.REQUESTS.headers))
+            targets.append(
+                (CONFIG.WORKSHEET_REQUESTS, SCHEMA.REQUESTS.headers)
+            )
         if CONFIG.SHOW_SANSKAR:
-            targets.append((CONFIG.WORKSHEET_SANSKAR_LIST, SCHEMA.SANSKAR.headers))
+            targets.append(
+                (CONFIG.WORKSHEET_SANSKAR_LIST, SCHEMA.SANSKAR.headers)
+            )
 
-        # Core operational worksheet (Always required)
-        targets.append((CONFIG.WORKSHEET_VOLUNTEERS, SCHEMA.VOLUNTEERS.headers))
+        # Core operational worksheet
+        targets.append(
+            (CONFIG.WORKSHEET_VOLUNTEERS, SCHEMA.VOLUNTEERS.headers)
+        )
 
-        # Ensure headers in batch
         for ws_name, headers in targets:
             sheets_service.ensure_headers(ws_name, headers)
 
@@ -96,15 +102,8 @@ PAGE_REGISTRY = {
 }
 
 
-@st.cache_data(show_spinner=False)
-def _load_view_function(module_name: str, function_name: str):
-    """Caches view function resolution so importlib isn't repeatedly invoked on reruns."""
-    module = importlib.import_module(module_name)
-    return getattr(module, function_name)
-
-
 def load_and_render_view(page_title: str, sheets_service):
-    """Executes target view function cleanly with error boundary wrappers."""
+    """Executes target view function cleanly using standard Python import caching."""
     page_info = PAGE_REGISTRY.get(page_title)
 
     if not page_info or not page_info["enabled"]:
@@ -112,7 +111,9 @@ def load_and_render_view(page_title: str, sheets_service):
         return
 
     try:
-        view_fn = _load_view_function(page_info["module"], page_info["function"])
+        # Standard dynamic import (Python's internal sys.modules handles caching automatically)
+        module = importlib.import_module(page_info["module"])
+        view_fn = getattr(module, page_info["function"])
         view_fn(sheets_service)
     except Exception as e:
         st.error(f"⚠️ Error rendering view '{page_title}': {str(e)}")
@@ -121,6 +122,7 @@ def load_and_render_view(page_title: str, sheets_service):
 # ==============================================================================
 # 3. ROUTER & MAIN ENTRY POINT
 # ==============================================================================
+
 
 def render_sidebar():
     """Renders platform navigation sidebar with active routes only."""
@@ -171,4 +173,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

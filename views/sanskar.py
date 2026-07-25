@@ -52,7 +52,36 @@ def _categorize_sanskar(sanskar_name: str) -> str:
 def render_sanskar_registration(sheets_service):
     """AWGP Sanskar Operations Hub: Form Registration & Consumable Analytics Dashboard."""
 
-    col_title, col_view = st.columns([3, 1])
+    # --------------------------------------------------------------------------
+    # CUSTOM CSS: Typography & Spacing Fixes
+    # --------------------------------------------------------------------------
+    st.markdown(
+        """
+        <style>
+        /* 1. Reduce text size of placeholders */
+        input::placeholder, textarea::placeholder {
+            font-size: 0.82rem !important;
+            opacity: 0.7 !important;
+        }
+        
+        /* 2. Reduce "Press Enter to submit form" hint size by 2px (14px -> 12px) */
+        div[data-testid="stFormInstructions"], 
+        small[data-testid="stFormInstructions"] {
+            font-size: 11px !important;
+            opacity: 0.65 !important;
+        }
+        
+        /* Form Label Optimization */
+        .stTextInput label, .stSelectbox label, .stNumberInput label {
+            font-weight: 500 !important;
+            font-size: 0.90rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_title, col_view = st.columns([2.5, 1.5])
 
     with col_view:
         view_mode = st.segmented_control(
@@ -63,75 +92,96 @@ def render_sanskar_registration(sheets_service):
         )
 
     with col_title:
-        st.header("🕉️ Sanskar Operations (16 संस्कार व्यवस्था)")
+        st.header("🕉️ Sanskar Operations")
         st.caption(
             "Gayatri Pariwar • Shantikunj Cultural & Spiritual Event Management"
         )
 
     st.divider()
 
-    # Safely fetch Sanskar records
+    # Safely fetch records
     sanskar_list = []
     try:
-        raw_records = sheets_service.get_all_records(
-            CONFIG.WORKSHEET_SANSKAR_LIST
-        )
+        raw_records = sheets_service.get_all_records(CONFIG.WORKSHEET_SANSKAR_LIST)
         if raw_records:
-            for r in raw_records:
-                if isinstance(r, dict) and any(r.values()):
-                    try:
-                        sanskar_list.append(SanskarRecord.from_row(r))
-                    except Exception:
-                        continue
+            sanskar_list = [
+                SanskarRecord.from_row(r)
+                for r in raw_records
+                if isinstance(r, dict) and any(r.values())
+            ]
     except Exception as e:
         st.warning(f"Note: Could not load existing Sanskar records: {str(e)}")
 
     # ==========================================================================
-    # VIEW 1: REGISTRATION FORM
+    # VIEW 1: SPACIOUS REGISTRATION FORM
     # ==========================================================================
     if view_mode == "📝 Register":
         active_vols = _get_active_volunteers_safe(sheets_service)
         vol_options = ["Auto-assign"] + active_vols
 
         with st.form("sanskar_registration_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-
-            with col1:
+            st.markdown("##### **1️⃣ Event Details (संस्कार विवरण)**")
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
                 sanskar_name = st.text_input(
                     "Sanskar Name *",
-                    placeholder="e.g., Punsavan, Namkaran, Vidyarambha, Birthday",
+                    placeholder="e.g., Punsavan, Namkaran",
                 )
+            with c2:
                 occasion = st.text_input(
-                    "Occasion *", placeholder="Reason or context of event"
-                )
-                requester_name = st.text_input(
-                    "Requester Name *", placeholder="Full name of devotee/family"
+                    "Occasion *",
+                    placeholder="Event context or reason",
                 )
 
-            with col2:
-                requester_contact = st.text_input(
-                    "Contact Number *", placeholder="10-digit mobile number"
+            st.write("")
+
+            st.markdown("##### **2️⃣ Requester Details (आवेदक विवरण)**")
+            c3, c4, c5 = st.columns(3, gap="medium")
+            with c3:
+                requester_name = st.text_input(
+                    "Requester Name *",
+                    placeholder="Full name of devotee/family",
                 )
+            with c4:
+                requester_contact = st.text_input(
+                    "Contact Number *",
+                    placeholder="10-digit mobile number",
+                )
+            with c5:
                 requester_type = st.selectbox(
                     "Requester Type",
-                    [
-                        "Student",
-                        "Teacher",
-                        "Parent",
-                        "Volunteer / कार्यकर्ता",
-                        "Other",
-                    ],
+                    ["Student", "Teacher", "Parent", "Volunteer / कार्यकर्ता", "Other"],
                 )
+
+            st.write("")
+
+            st.markdown("##### **3️⃣ Coordination & Logistics (व्यवस्थापन)**")
+            c6, c7 = st.columns(2, gap="large")
+            with c6:
                 no_of_people = st.number_input(
-                    "Expected Attendance (जन सहभागिता)", min_value=1, value=10
+                    "Expected Attendance (जन सहभागिता)",
+                    min_value=1,
+                    value=10,
+                    step=5,
+                )
+            with c7:
+                assigned_volunteer = st.selectbox(
+                    "Assigned Volunteer (कर्मठ कार्यकर्ता)", vol_options
                 )
 
-            assigned_volunteer = st.selectbox(
-                "Assigned Volunteer (कर्मठ कार्यकर्ता)", vol_options
+            notes = st.text_area(
+                "Event Notes / Remarks",
+                placeholder="Additional instructions or notes...",
+                max_chars=300,
             )
-            notes = st.text_area("Event Notes / Remarks", max_chars=300)
 
-            submitted = st.form_submit_button("Submit Sanskar Request", type="primary")
+            st.divider()
+
+            _, btn_col = st.columns([3, 1])
+            with btn_col:
+                submitted = st.form_submit_button(
+                    "Submit Sanskar Request 🕉️", type="primary", use_container_width=True
+                )
 
             if submitted:
                 errors = []
@@ -174,7 +224,7 @@ def render_sanskar_registration(sheets_service):
                         st.error(f"Failed to submit: {str(e)}")
 
     # ==========================================================================
-    # VIEW 2: AWGP / SHANTIKUNJ SANSKAR DASHBOARD
+    # VIEW 2: VECTORIZED ANALYTICS DASHBOARD
     # ==========================================================================
     else:
         st.subheader("📊 Shantikunj Sanskar Operations & Impact")
@@ -183,97 +233,95 @@ def render_sanskar_registration(sheets_service):
             st.info("No Sanskar records registered yet. Switch to 'Register' mode above to log events!")
             return
 
+        # Vectorized Pandas Dataframe for fast analytics
+        df = pd.DataFrame([s.__dict__ for s in sanskar_list])
+        df["Attendance"] = pd.to_numeric(df["no_of_people"], errors="coerce").fillna(0).astype(int)
+        df["Category"] = df["sanskar_name"].apply(_categorize_sanskar)
+
         current_ym = datetime.now().strftime("%Y-%m")
+        df["Is_This_Month"] = df["timestamp"].astype(str).str.startswith(current_ym)
+
+        # Metrics Aggregation
+        total_sanskars = len(df)
+        this_month_sanskars = int(df["Is_This_Month"].sum())
+        pending_sanskars = len(df[df["status"].str.lower() == "pending"])
+        fulfilled_sanskars = len(df[df["status"].str.lower() == "fulfilled"])
         
-        total_sanskars = len(sanskar_list)
-        this_month_sanskars = 0
-        this_month_attendees = 0
-
-        total_attendees = 0
-        pending_sanskars = 0
-        fulfilled_sanskars = 0
-
-        assigned_vols = set()
-
-        for s in sanskar_list:
-            att = int(s.no_of_people) if str(s.no_of_people).isdigit() else 0
-            total_attendees += att
-
-            if s.is_pending:
-                pending_sanskars += 1
-            if s.is_fulfilled:
-                fulfilled_sanskars += 1
-
-            if s.timestamp and str(s.timestamp).startswith(current_ym):
-                this_month_sanskars += 1
-                this_month_attendees += att
-
-            if s.assigned_volunteer and s.assigned_volunteer != "Auto-assign":
-                assigned_vols.add(s.assigned_volunteer)
+        total_reach = int(df["Attendance"].sum())
+        month_reach = int(df[df["Is_This_Month"]]["Attendance"].sum())
+        
+        active_vols = df[
+            (df["assigned_volunteer"].str.strip() != "") & 
+            (df["assigned_volunteer"] != "Auto-assign")
+        ]["assigned_volunteer"].nunique()
 
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("Total Sanskars", f"{total_sanskars:,}")
         m2.metric("This Month", f"{this_month_sanskars:,}", f"+{this_month_sanskars} new")
         m3.metric("Pending Request", f"{pending_sanskars:,}")
-        m4.metric("Total Reach", f"{total_attendees:,} ppl")
-        m5.metric("Month Reach", f"{this_month_attendees:,} ppl")
-        m6.metric("Volunteers Active", f"{len(assigned_vols):,}")
+        m4.metric("Total Reach", f"{total_reach:,} ppl")
+        m5.metric("Month Reach", f"{month_reach:,} ppl")
+        m6.metric("Volunteers Active", f"{active_vols:,}")
 
         st.divider()
 
-        tab_upcoming, tab_stage, tab_ops, tab_log = st.tabs([
-            "📅 Upcoming Sanskars",
-            "🕉️ 16 Sanskar Life-Stage Impact",
-            "🍩 Workflow & Volunteers",
-            "📋 Master Register"
-        ])
+        tab_upcoming, tab_stage, tab_ops, tab_log = st.tabs(
+            [
+                "📅 Upcoming Sanskars",
+                "🕉️ 16 Sanskar Life-Stage Impact",
+                "🍩 Workflow & Volunteers",
+                "📋 Master Register",
+            ]
+        )
 
         with tab_upcoming:
             st.markdown("##### **📅 Upcoming Scheduled & Pending Sanskars**")
-            
-            upcoming_events = [s for s in sanskar_list if s.is_pending]
+            df_pending = df[df["status"].str.lower() == "pending"]
 
-            if not upcoming_events:
+            if df_pending.empty:
                 st.success("🎉 All scheduled Sanskars have been completed! No pending requests.")
             else:
-                up_total = len(upcoming_events)
-                up_reach = sum(int(s.no_of_people) if str(s.no_of_people).isdigit() else 0 for s in upcoming_events)
-                unassigned_count = len([s for s in upcoming_events if not s.assigned_volunteer or s.assigned_volunteer == "Auto-assign"])
+                up_total = len(df_pending)
+                up_reach = int(df_pending["Attendance"].sum())
+                unassigned_count = len(df_pending[
+                    (df_pending["assigned_volunteer"].str.strip() == "") | 
+                    (df_pending["assigned_volunteer"] == "Auto-assign")
+                ])
 
                 c_u1, c_u2, c_u3 = st.columns(3)
                 c_u1.metric("Upcoming Events", f"{up_total}")
                 c_u2.metric("Expected Reach", f"{up_reach:,} attendees")
-                c_u3.metric("Unassigned Events", f"{unassigned_count}", delta="Needs Coordinator" if unassigned_count > 0 else "All Assigned")
+                c_u3.metric(
+                    "Unassigned Events",
+                    f"{unassigned_count}",
+                    delta="Needs Coordinator" if unassigned_count > 0 else "All Assigned",
+                )
 
                 st.divider()
 
-                df_upcoming = pd.DataFrame(
-                    [
-                        {
-                            "Sanskar Name": str(s.sanskar_name).title(),
-                            "Type / Life-Stage": _categorize_sanskar(s.sanskar_name),
-                            "Occasion / Context": s.occasion,
-                            "Requester Name": s.requester_name,
-                            "Contact": s.requester_contact,
-                            "Requester Category": s.requester_type,
-                            "Expected Attendance": int(s.no_of_people) if str(s.no_of_people).isdigit() else 0,
-                            "Assigned Volunteer": s.assigned_volunteer if s.assigned_volunteer else "⚠️ Unassigned",
-                            "Status": s.status,
-                            "Requested On": s.timestamp,
-                        }
-                        for s in upcoming_events
-                    ]
-                )
+                df_display_up = df_pending.rename(columns={
+                    "sanskar_name": "Sanskar Name",
+                    "Category": "Type / Life-Stage",
+                    "occasion": "Occasion / Context",
+                    "requester_name": "Requester Name",
+                    "requester_contact": "Contact",
+                    "requester_type": "Requester Category",
+                    "Attendance": "Expected Attendance",
+                    "assigned_volunteer": "Assigned Volunteer",
+                    "status": "Status",
+                    "timestamp": "Requested On"
+                })[[
+                    "Sanskar Name", "Type / Life-Stage", "Occasion / Context", 
+                    "Requester Name", "Contact", "Requester Category", 
+                    "Expected Attendance", "Assigned Volunteer", "Status", "Requested On"
+                ]]
 
                 st.dataframe(
-                    df_upcoming,
+                    df_display_up,
                     width="stretch",
                     hide_index=True,
                     column_config={
-                        "Expected Attendance": st.column_config.NumberColumn(
-                            "Expected Attendance",
-                            format="%d ppl",
-                        ),
+                        "Expected Attendance": st.column_config.NumberColumn(format="%d ppl"),
                     },
                 )
 
@@ -282,24 +330,25 @@ def render_sanskar_registration(sheets_service):
 
             with col_l:
                 st.markdown("##### **Events by Life-Stage Category**")
-                stage_counts = {
-                    "🤰 Pre-natal (गर्भ-कालीन)": 0,
-                    "👶 Childhood (बाल / शिशु)": 0,
-                    "🎓 Education / Youth (शिक्षा / दीक्षा)": 0,
-                    "💍 Grihastha & Social (गृहस्थ / सामाजिक)": 0,
-                }
-                for s in sanskar_list:
-                    cat = _categorize_sanskar(s.sanskar_name)
-                    stage_counts[cat] += 1
+                stage_counts = df["Category"].value_counts().to_dict()
+                
+                # Standardized order guarantee
+                all_stages = [
+                    "🤰 Pre-natal (गर्भ-कालीन)",
+                    "👶 Childhood (बाल / शिशु)",
+                    "🎓 Education / Youth (शिक्षा / दीक्षा)",
+                    "💍 Grihastha & Social (गृहस्थ / सामाजिक)"
+                ]
+                x_vals = [stage_counts.get(stg, 0) for stg in all_stages]
 
                 fig_stage = go.Figure(
                     data=[
                         go.Bar(
-                            y=list(stage_counts.keys()),
-                            x=list(stage_counts.values()),
+                            y=all_stages,
+                            x=x_vals,
                             orientation="h",
                             marker_color=["#EC4899", "#3B82F6", "#10B981", "#F59E0B"],
-                            text=list(stage_counts.values()),
+                            text=x_vals,
                             textposition="auto",
                         )
                     ]
@@ -313,18 +362,15 @@ def render_sanskar_registration(sheets_service):
 
             with col_r:
                 st.markdown("##### **Popularity by Specific Sanskar Name**")
-                name_counts = {}
-                for s in sanskar_list:
-                    name = str(s.sanskar_name).title() or "Other"
-                    name_counts[name] = name_counts.get(name, 0) + 1
+                name_counts = df["sanskar_name"].str.title().value_counts()
 
                 fig_names = go.Figure(
                     data=[
                         go.Bar(
-                            x=list(name_counts.keys()),
-                            y=list(name_counts.values()),
+                            x=name_counts.index.tolist(),
+                            y=name_counts.values.tolist(),
                             marker_color="#2d5a4a",
-                            text=list(name_counts.values()),
+                            text=name_counts.values.tolist(),
                             textposition="auto",
                         )
                     ]
@@ -342,16 +388,11 @@ def render_sanskar_registration(sheets_service):
 
             with col_ops1:
                 st.markdown("##### **Request Status Breakdown**")
-                status_counts = {
-                    "Pending": pending_sanskars,
-                    "Fulfilled": fulfilled_sanskars,
-                }
-
                 fig_status = go.Figure(
                     data=[
                         go.Pie(
-                            labels=list(status_counts.keys()),
-                            values=list(status_counts.values()),
+                            labels=["Pending", "Fulfilled"],
+                            values=[pending_sanskars, fulfilled_sanskars],
                             hole=0.6,
                             marker_colors=["#F59E0B", "#10B981"],
                             textinfo="label+percent+value",
@@ -367,18 +408,15 @@ def render_sanskar_registration(sheets_service):
 
             with col_ops2:
                 st.markdown("##### **Volunteer Event Assignments**")
-                vol_assignments = {}
-                for s in sanskar_list:
-                    vol = s.assigned_volunteer if s.assigned_volunteer else "Unassigned / Auto"
-                    vol_assignments[vol] = vol_assignments.get(vol, 0) + 1
+                vol_series = df["assigned_volunteer"].replace("", "Unassigned / Auto").value_counts()
 
                 fig_vol = go.Figure(
                     data=[
                         go.Bar(
-                            x=list(vol_assignments.keys()),
-                            y=list(vol_assignments.values()),
+                            x=vol_series.index.tolist(),
+                            y=vol_series.values.tolist(),
                             marker_color="#6366F1",
-                            text=list(vol_assignments.values()),
+                            text=vol_series.values.tolist(),
                             textposition="auto",
                         )
                     ]
@@ -393,21 +431,22 @@ def render_sanskar_registration(sheets_service):
 
         with tab_log:
             st.markdown("##### **📋 All Registered Sanskar Events (Historical Log)**")
-            df_sanskar = pd.DataFrame(
-                [
-                    {
-                        "Sanskar Name": s.sanskar_name,
-                        "Category": _categorize_sanskar(s.sanskar_name),
-                        "Occasion": s.occasion,
-                        "Requester": s.requester_name,
-                        "Contact": s.requester_contact,
-                        "Type": s.requester_type,
-                        "Attendance": int(s.no_of_people) if str(s.no_of_people).isdigit() else 0,
-                        "Status": s.status,
-                        "Assigned Volunteer": s.assigned_volunteer or "Unassigned",
-                        "Timestamp": s.timestamp,
-                    }
-                    for s in sanskar_list
-                ]
-            )
-            st.dataframe(df_sanskar, width="stretch", hide_index=True)
+            df_master = df.rename(columns={
+                "sanskar_name": "Sanskar Name",
+                "Category": "Category",
+                "occasion": "Occasion",
+                "requester_name": "Requester",
+                "requester_contact": "Contact",
+                "requester_type": "Type",
+                "Attendance": "Attendance",
+                "status": "Status",
+                "assigned_volunteer": "Assigned Volunteer",
+                "timestamp": "Timestamp"
+            })[[
+                "Sanskar Name", "Category", "Occasion", "Requester", 
+                "Contact", "Type", "Attendance", "Status", 
+                "Assigned Volunteer", "Timestamp"
+            ]]
+            df_master["Assigned Volunteer"] = df_master["Assigned Volunteer"].replace("", "Unassigned")
+
+            st.dataframe(df_master, width="stretch", hide_index=True)
