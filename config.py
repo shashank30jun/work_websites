@@ -44,8 +44,8 @@ class AppConfig:
     SHOW_HOME: bool = True
     SHOW_SANSKAR: bool = True
     SHOW_CATALOG: bool = False
-    SHOW_REQUEST: bool = True
-    SHOW_ADMIN: bool = False
+    SHOW_REQUEST: bool = False
+    SHOW_ADMIN: bool = True
     SHOW_ABOUT: bool = True
 
     CURRENCY: str = "₹"
