@@ -1,11 +1,12 @@
 """
 Public Book Catalog Component
+Updated: Reads from Master_Catalog with quantities
 """
 
 import streamlit as st
 
 from config import CONFIG
-from models.book import Book
+from models.master_catalog import MasterCatalogItem
 from services.sheets_service import GoogleSheetsService
 from utils.formatters import get_status_badge, get_class_badge
 
@@ -36,13 +37,29 @@ def render_catalog(sheets_service: GoogleSheetsService):
     .book-body {
         padding: 14px;
     }
+    .qty-badge {
+        background: #e8f5e9;
+        color: #2e7d32;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .qty-badge-low {
+        background: #fff3e0;
+        color: #ef6c00;
+    }
+    .qty-badge-out {
+        background: #ffebee;
+        color: #c62828;
+    }
     </style>
     """, unsafe_allow_html=True)
 
     with st.spinner("Loading catalog..."):
         try:
-            records = sheets_service.get_all_records(CONFIG.WORKSHEET_INVENTORY)
-            books = [Book.from_row(r) for r in records]
+            records = sheets_service.get_all_records(CONFIG.WORKSHEET_MASTER_CATALOG)
+            catalog = [MasterCatalogItem.from_row(r) for r in records]
         except Exception as e:
             st.error(f"Failed to load catalog: {str(e)}")
             return
@@ -56,34 +73,36 @@ def render_catalog(sheets_service: GoogleSheetsService):
         class_filter = st.selectbox("Class", ["All"] + CONFIG.CLASSES, 
                                     label_visibility="collapsed")
     with col3:
-        status_filter = st.selectbox("Status", ["All"] + CONFIG.STATUS_ALL, 
+        status_filter = st.selectbox("Stock Status", 
+                                     ["All", "In Stock", "Low Stock", "Out of Stock"], 
                                      label_visibility="collapsed")
     with col4:
         st.markdown("<br>", unsafe_allow_html=True)
-        refresh = st.button("🔄", help="Refresh data", use_container_width=True)
+        refresh = st.button("🔄", help="Refresh data", width=True)
 
     if refresh:
         st.cache_data.clear()
         st.rerun()
 
-    filtered = books
+    filtered = catalog
     if search:
         search_lower = search.lower()
-        filtered = [b for b in filtered if (
-            search_lower in b.title.lower() or 
-            search_lower in b.author.lower() or 
-            search_lower in b.genre.lower()
+        filtered = [c for c in filtered if (
+            search_lower in c.title.lower() or 
+            search_lower in c.author.lower() or 
+            search_lower in c.genre.lower()
         )]
 
     if class_filter != "All":
-        filtered = [b for b in filtered if b.target_class == class_filter]
+        filtered = [c for c in filtered if c.target_class == class_filter]
 
     if status_filter != "All":
-        filtered = [b for b in filtered if b.status == status_filter]
+        filtered = [c for c in filtered if c.stock_status == status_filter]
     else:
-        filtered = [b for b in filtered if b.status == CONFIG.STATUS_AVAILABLE]
+        filtered = [c for c in filtered if c.is_in_stock]
 
-    st.markdown(f"<p style='color: #666; font-size: 13px;'>Showing {len(filtered)} books</p>", 
+    total_copies = sum(c.available_qty for c in filtered)
+    st.markdown(f"<p style='color: #666; font-size: 13px;'>Showing {len(filtered)} titles ({total_copies} copies available)</p>", 
                 unsafe_allow_html=True)
 
     if not filtered:
@@ -100,9 +119,20 @@ def render_catalog(sheets_service: GoogleSheetsService):
     }
 
     cols = st.columns(3)
-    for idx, book in enumerate(filtered):
+    for idx, item in enumerate(filtered):
         with cols[idx % 3]:
-            header_color = genre_colors.get(book.genre, "linear-gradient(135deg, #f5f5f5, #e0e0e0)")
+            header_color = genre_colors.get(item.genre, "linear-gradient(135deg, #f5f5f5, #e0e0e0)")
+
+            # Quantity badge styling
+            if item.available_qty == 0:
+                qty_class = "qty-badge qty-badge-out"
+                qty_text = f"Out of Stock"
+            elif item.available_qty <= 5:
+                qty_class = "qty-badge qty-badge-low"
+                qty_text = f"Only {item.available_qty} left"
+            else:
+                qty_class = "qty-badge"
+                qty_text = f"{item.available_qty} available"
 
             st.markdown(f"""
             <div class="book-card">
@@ -110,31 +140,33 @@ def render_catalog(sheets_service: GoogleSheetsService):
                     📖
                 </div>
                 <div class="book-body">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                        {get_class_badge(book.target_class)}
-                        {get_status_badge(book.status)}
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        {get_class_badge(item.target_class)}
+                        <span class="{qty_class}">{qty_text}</span>
                     </div>
                     <h4 style="margin:8px 0 4px 0; font-size:15px; color:#1a3a2f; font-weight:700;">
-                        {book.title}
+                        {item.title}
                     </h4>
-                    <p style="margin:0; font-size:12px; color:#666;">by {book.author}</p>
-                    <p style="margin:4px 0 0 0; font-size:11px; color:#888;">{book.genre} •</p>
-                    <div style="display:flex; justify-content:space-between; align-items:center; 
-                                margin-top:10px; padding-top:10px; border-top:1px solid #f0ece4;">
+                    <p style="margin:0; font-size:12px; color:#666;">by {item.author}</p>
+                    <p style="margin:4px 0 0 0; font-size:11px; color:#888;">{item.genre} • {item.language}</p>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:10px; border-top:1px solid #f0ece4;">
                         <span style="font-size:14px; font-weight:700; color:#1a3a2f;">
-                            {book.formatted_cost}
+                            {item.formatted_cost}
                         </span>
+                        <span style="font-size:11px; color:#888;">Total: {item.total_qty} copies</span>
                     </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-            if book.is_available:
-                if st.button("Request Book", key=f"req_{book.book_id}", 
-                           use_container_width=True, type="primary"):
-                    st.session_state.selected_book = book
+            if item.is_in_stock:
+                if st.button("Request Book", key=f"req_btn_{item.catalog_id}", 
+                           width=True, type="primary"):
+                    st.session_state.selected_book = item
                     st.session_state.show_request_form = True
+                    st.session_state.request_submitted = False
+                    st.session_state.form_data = {}
                     st.rerun()
             else:
-                st.button("Unavailable", key=f"unav_{book.book_id}", 
-                         use_container_width=True, disabled=True)
+                st.button("Out of Stock", key=f"out_{item.catalog_id}", 
+                         width=True, disabled=True)

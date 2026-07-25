@@ -15,7 +15,7 @@ class Book:
     author: str
     genre: str
     target_class: str
-    # language: str = "Hindi"
+    language: str = "Hindi"
     cost_inr: float = 0.0
     donor_name: str = ""
     donor_contact: str = ""
@@ -46,7 +46,7 @@ class Book:
             author=str(row.get("Author", "")),
             genre=str(row.get("Genre", "")),
             target_class=str(row.get("Class", "")),
-            # language=str(row.get("Language", "Hindi")),
+            language=str(row.get("Language", "Hindi")),
             cost_inr=float(row.get("Cost_INR", 0) or 0),
             donor_name=str(row.get("Donor_Name", "")),
             donor_contact=str(row.get("Donor_Contact", "")),
@@ -60,8 +60,7 @@ class Book:
     def to_row(self) -> list:
         return [
             self.book_id, self.timestamp, self.title, self.author,
-            self.genre, self.target_class, #self.language, 
-            self.cost_inr,
+            self.genre, self.target_class, self.language, self.cost_inr,
             self.donor_name, self.donor_contact, self.donor_type,
             self.status, self.assigned_volunteer, self.notes, self.current_location,
         ]

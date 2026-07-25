@@ -1,14 +1,18 @@
 """
-BSGP Book Redistribution Platform
-Main Application Entry Point
+BSGP Book Redistribution Platform v2
+Updated: Master Catalog + Stock Ledger architecture
 """
 
 import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from config import CONFIG, INVENTORY_HEADERS, REQUESTS_HEADERS, VOLUNTEERS_HEADERS
+from config import (
+    CONFIG, MASTER_CATALOG_HEADERS, STOCK_LEDGER_HEADERS,
+    REQUESTS_HEADERS, DISTRIBUTION_HEADERS, VOLUNTEERS_HEADERS
+)
 from services.sheets_service import GoogleSheetsService
+from components.home_dashboard import render_home_dashboard
 from components.catalog import render_catalog
 from components.request_form import render_request_form
 from components.admin_dashboard import render_admin_dashboard
@@ -71,9 +75,12 @@ def get_sheets_service():
 
 
 def init_sheets(sheets_service):
+    """Initialize all worksheets with proper headers."""
     try:
-        sheets_service.ensure_headers(CONFIG.WORKSHEET_INVENTORY, INVENTORY_HEADERS)
+        sheets_service.ensure_headers(CONFIG.WORKSHEET_MASTER_CATALOG, MASTER_CATALOG_HEADERS)
+        sheets_service.ensure_headers(CONFIG.WORKSHEET_STOCK_LEDGER, STOCK_LEDGER_HEADERS)
         sheets_service.ensure_headers(CONFIG.WORKSHEET_REQUESTS, REQUESTS_HEADERS)
+        sheets_service.ensure_headers(CONFIG.WORKSHEET_DISTRIBUTION, DISTRIBUTION_HEADERS)
         sheets_service.ensure_headers(CONFIG.WORKSHEET_VOLUNTEERS, VOLUNTEERS_HEADERS)
     except Exception as e:
         st.error(f"Failed to initialize sheets: {str(e)}")
@@ -114,6 +121,7 @@ def render_sidebar():
         st.divider()
 
         page = st.radio("Navigate", [
+            "🏠 Home Dashboard",
             "📖 Book Catalog",
             "📝 Request a Book", 
             "📊 Admin Dashboard",
@@ -147,36 +155,38 @@ def render_about():
     ### 🕉️ About BSGP
 
     **Bharatiya Sanskriti Gyaan Pariksha (BSGP)** is a unique initiative by 
-    **Dev Sanskriti Vishwavidyalaya (DSVV)**, Shantikunj, Haridwar — under the guidance of 
-    **All World Gayatri Pariwar (AWGP)**.
+    **Dev Sanskriti Vishwavidyalaya (DSVV)**, Shantikunj, Haridwar.
 
     #### Purpose
     BSGP is conducted for students of **Classes 5 to 10** to:
     - Awaken cultural values and patriotism
     - Build character, confidence, and self-awareness
     - Connect the young generation with India's glorious heritage
-    - Enhance IQ, EQ, and SQ through value-based education
 
     #### This Platform
-    This book redistribution platform helps manage:
-    - 📚 **Inventory** of BSGP study materials
-    - 🔄 **Distribution** to schools and students
-    - 💰 **Cost tracking** for printing, transport, and packaging
-    - 👥 **Volunteer coordination** (Expert Volunteers, Volunteers, Teachers)
-
-    #### Contact
-    - **Website:** [dsvv.ac.in](https://dsvv.ac.in)
-    - **Location:** Shantikunj, Haridwar, Uttarakhand
-    - **Organized by:** All World Gayatri Pariwar
+    - 📚 **Master Catalog** — Unique titles with quantities
+    - 📦 **Stock Ledger** — Individual copy tracking
+    - 🔄 **Distribution Log** — Every handover recorded
+    - 👥 **Volunteer coordination**
 
     ---
     *"संस्कृति रक्षणम्, चरित्र निर्माणम्"*
-    *Protecting Culture, Building Character*
     """)
 
 
 def main():
     render_header()
+
+    # Initialize session state
+    for key, default in [
+        ("selected_book", None),
+        ("show_request_form", False),
+        ("request_submitted", False),
+        ("form_data", {}),
+        ("last_request_id", ""),
+    ]:
+        if key not in st.session_state:
+            st.session_state[key] = default
 
     try:
         sheets_service = get_sheets_service()
@@ -196,19 +206,23 @@ def main():
 
     page = render_sidebar()
 
-    if "Catalog" in page:
+    if "Home" in page:
+        render_home_dashboard(sheets_service)
+    elif "Catalog" in page:
         render_catalog(sheets_service)
     elif "Request" in page:
-        if st.session_state.get("show_request_form", False):
-            render_request_form(sheets_service)
-            if st.button("← Back to Catalog"):
-                st.session_state.show_request_form = False
-                st.session_state.selected_book = None
+        if not st.session_state.get("selected_book"):
+            st.info("📖 Please select a book from the **Book Catalog** first.")
+            if st.button("Go to Book Catalog →", type="primary"):
                 st.rerun()
         else:
-            st.info("Please select a book from the Catalog first to request it.")
-            if st.button("Go to Catalog"):
-                st.rerun()
+            render_request_form(sheets_service)
+            if not st.session_state.get("request_submitted", False):
+                if st.button("← Back to Catalog", width=True):
+                    st.session_state.show_request_form = False
+                    st.session_state.selected_book = None
+                    st.session_state.form_data = {}
+                    st.rerun()
     elif "Admin" in page:
         render_admin_dashboard(sheets_service)
     elif "About" in page:

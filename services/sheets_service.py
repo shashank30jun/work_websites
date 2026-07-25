@@ -1,5 +1,6 @@
 """
 Google Sheets Service - Thread-safe, rate-limited API wrapper
+Updated: Supports Master Catalog + Stock Ledger architecture
 """
 
 import os
@@ -12,12 +13,21 @@ from functools import wraps
 
 import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.errors import HttpError
+
+try:
+    from googleapiclient.errors import HttpError
+except ImportError:
+    try:
+        from google.api_core.exceptions import GoogleAPIError as HttpError
+    except ImportError:
+        class HttpError(Exception):
+            def __init__(self, resp=None, content=None):
+                self.resp = resp or type('obj', (object,), {'status': 500})()
+                self.content = content
+                super().__init__(str(content))
 
 
 class RateLimiter:
-    """Thread-safe rate limiter for Google Sheets API."""
-
     def __init__(self, max_calls: int = 60, window_seconds: int = 60):
         self.max_calls = max_calls
         self.window_seconds = window_seconds
@@ -45,7 +55,13 @@ def with_rate_limit(func):
         try:
             return func(self, *args, **kwargs)
         except HttpError as e:
-            if e.resp.status == 429:
+            status = getattr(getattr(e, 'resp', None), 'status', 0)
+            if status == 429:
+                time.sleep(5)
+                return func(self, *args, **kwargs)
+            raise
+        except Exception as e:
+            if "429" in str(e) or "rate" in str(e).lower():
                 time.sleep(5)
                 return func(self, *args, **kwargs)
             raise
@@ -53,8 +69,6 @@ def with_rate_limit(func):
 
 
 class GoogleSheetsService:
-    """Production-grade Google Sheets service."""
-
     _instance = None
     _lock = threading.Lock()
 
@@ -94,7 +108,7 @@ class GoogleSheetsService:
             if os.path.exists(self.credentials_path):
                 with open(self.credentials_path, 'r') as f:
                     creds_data = f.read()
-            elif creds_data.startswith('{'):
+            elif isinstance(creds_data, str) and creds_data.startswith('{'):
                 pass
             else:
                 env_creds = os.getenv("GOOGLE_CREDENTIALS_JSON")
@@ -180,22 +194,46 @@ class GoogleSheetsService:
         ws.update(cell_range, [row_data], value_input_option='USER_ENTERED')
         self._clear_cache(f"records_{worksheet_name}")
 
-    def get_next_id(self, worksheet_name: str, id_column: int = 1) -> str:
+    @with_rate_limit
+    def batch_update(self, worksheet_name: str, updates: List[tuple]):
+        """Batch update multiple cells at once for efficiency."""
+        ws = self._get_worksheet(worksheet_name)
+        cells = []
+        for row, col, value in updates:
+            cells.append(gspread.Cell(row, col, value))
+        ws.update_cells(cells, value_input_option='USER_ENTERED')
+        self._clear_cache(f"records_{worksheet_name}")
+
+    def get_next_id(self, worksheet_name: str, id_column: int = 1, prefix: str = "BSGP") -> str:
         records = self.get_all_records(worksheet_name, use_cache=False)
         if not records:
-            return "BSGP001"
+            return f"{prefix}001"
 
         max_num = 0
         for record in records:
             id_val = str(record.get(list(record.keys())[id_column - 1], ""))
-            if id_val.startswith("BSGP"):
+            if id_val.startswith(prefix):
                 try:
-                    num = int(id_val[4:])
+                    num = int(id_val[len(prefix):])
                     max_num = max(max_num, num)
                 except ValueError:
                     continue
 
-        return f"BSGP{max_num + 1:03d}"
+        return f"{prefix}{max_num + 1:03d}"
+
+    def get_next_copy_id(self, catalog_id: str, worksheet_name: str) -> str:
+        """Generate next copy ID for a catalog item (e.g., CAT001-01, CAT001-02)."""
+        records = self.get_all_records(worksheet_name, use_cache=False)
+        max_num = 0
+        for record in records:
+            copy_id = str(record.get("Copy_ID", ""))
+            if copy_id.startswith(f"{catalog_id}-"):
+                try:
+                    num = int(copy_id.split("-")[-1])
+                    max_num = max(max_num, num)
+                except ValueError:
+                    continue
+        return f"{catalog_id}-{max_num + 1:02d}"
 
     def ensure_headers(self, worksheet_name: str, headers: List[str]):
         ws = self._get_worksheet(worksheet_name)

@@ -1,5 +1,7 @@
+
 """
 Admin Dashboard Component
+Updated: Uses Master Catalog + Stock Ledger architecture
 """
 
 import streamlit as st
@@ -7,8 +9,8 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from config import CONFIG
-from models.book import Book
-from models.request import BookRequest
+from models.master_catalog import MasterCatalogItem
+from models.stock_ledger import StockLedgerItem
 from services.sheets_service import GoogleSheetsService
 from utils.formatters import format_currency
 
@@ -28,25 +30,27 @@ def render_admin_dashboard(sheets_service: GoogleSheetsService):
 
     with st.spinner("Loading dashboard data..."):
         try:
-            inv_records = sheets_service.get_all_records(CONFIG.WORKSHEET_INVENTORY)
+            cat_records = sheets_service.get_all_records(CONFIG.WORKSHEET_MASTER_CATALOG)
+            ledger_records = sheets_service.get_all_records(CONFIG.WORKSHEET_STOCK_LEDGER)
             req_records = sheets_service.get_all_records(CONFIG.WORKSHEET_REQUESTS)
             vol_records = sheets_service.get_all_records(CONFIG.WORKSHEET_VOLUNTEERS)
 
-            books = [Book.from_row(r) for r in inv_records]
-            requests = [BookRequest.from_row(r) for r in req_records]
+            catalog = [MasterCatalogItem.from_row(r) for r in cat_records]
+            ledger = [StockLedgerItem.from_row(r) for r in ledger_records]
         except Exception as e:
             st.error(f"Failed to load data: {str(e)}")
             return
 
     st.markdown("### 📊 Overview")
 
-    m1, m2, m3, m4, m5 = st.columns(5)
+    total_books = sum(c.total_qty for c in catalog)
+    total_cost = sum(c.total_qty * c.cost_per_unit for c in catalog)
+    available = sum(c.available_qty for c in catalog)
+    reserved = sum(c.reserved_qty for c in catalog)
+    distributed = sum(c.distributed_qty for c in catalog)
+    pending_reqs = sum(int(r.get("Qty_Requested", 0) or 0) for r in req_records if r.get("Request_Status") == "Pending")
 
-    total_books = len(books)
-    total_cost = sum(b.cost_inr for b in books)
-    available = len([b for b in books if b.status == "Available"])
-    distributed = len([b for b in books if b.status == "Distributed"])
-    pending_reqs = len([r for r in requests if r.status == "Pending"])
+    m1, m2, m3, m4, m5 = st.columns(5)
 
     with m1:
         _metric_card("Total Books", total_books, "📚")
@@ -55,9 +59,9 @@ def render_admin_dashboard(sheets_service: GoogleSheetsService):
     with m3:
         _metric_card("Available", available, "✅")
     with m4:
-        _metric_card("Distributed", distributed, "🚚")
+        _metric_card("Reserved", reserved, "📦")
     with m5:
-        _metric_card("Pending Requests", pending_reqs, "⏳")
+        _metric_card("Pending Qty", pending_reqs, "⏳")
 
     st.divider()
 
@@ -66,8 +70,8 @@ def render_admin_dashboard(sheets_service: GoogleSheetsService):
     with col1:
         st.markdown("#### Distribution by Class")
         class_data = {}
-        for b in books:
-            class_data[b.target_class] = class_data.get(b.target_class, 0) + 1
+        for c in catalog:
+            class_data[c.target_class] = class_data.get(c.target_class, 0) + c.total_qty
 
         fig = go.Figure(data=[go.Pie(
             labels=list(class_data.keys()),
@@ -76,82 +80,78 @@ def render_admin_dashboard(sheets_service: GoogleSheetsService):
             marker_colors=['#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#f44336', '#795548']
         )])
         fig.update_layout(showlegend=True, height=300, margin=dict(t=10, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width=True)
 
     with col2:
         st.markdown("#### Status Distribution")
-        status_data = {}
-        for b in books:
-            status_data[b.status] = status_data.get(b.status, 0) + 1
-
         fig = go.Figure(data=[go.Bar(
-            x=list(status_data.keys()),
-            y=list(status_data.values()),
+            x=["Available", "Reserved", "Distributed"],
+            y=[available, reserved, distributed],
             marker_color=['#4caf50', '#ff9800', '#2196f3']
         )])
         fig.update_layout(height=300, margin=dict(t=10, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width=True)
 
     st.divider()
 
-    st.markdown("### 📋 Inventory Management")
+    st.markdown("### 📋 Master Catalog")
 
-    st.markdown("#### Quick Status Toggle")
-    toggle_col1, toggle_col2, toggle_col3 = st.columns([2, 1, 1])
+    if catalog:
+        cat_df = pd.DataFrame([{
+            "ID": c.catalog_id,
+            "Title": c.title,
+            "Author": c.author,
+            "Class": c.target_class,
+            "Genre": c.genre,
+            "Cost": c.formatted_cost,
+            "Total": c.total_qty,
+            "Available": c.available_qty,
+            "Reserved": c.reserved_qty,
+            "Distributed": c.distributed_qty,
+            "Status": c.stock_status,
+        } for c in catalog])
+        st.dataframe(cat_df, width=True, hide_index=True)
 
-    with toggle_col1:
-        book_options = {f"{b.title} ({b.book_id})": b for b in books}
-        selected = st.selectbox("Select Book", list(book_options.keys()))
+    st.divider()
 
-    with toggle_col2:
-        new_status = st.selectbox("New Status", CONFIG.STATUS_ALL)
+    st.markdown("### 📦 Stock Ledger (Individual Copies)")
 
-    with toggle_col3:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Update Status", use_container_width=True, type="primary"):
-            book = book_options[selected]
-            try:
-                _update_book_status(sheets_service, book.book_id, new_status)
-                st.success(f"Updated {book.title} to {new_status}")
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
-
-    with st.expander("View Full Inventory"):
-        df = pd.DataFrame([{
-            "ID": b.book_id,
-            "Title": b.title,
-            "Author": b.author,
-            "Class": b.target_class,
-            "Genre": b.genre,
-            "Cost": b.formatted_cost,
-            "Status": b.status,
-            "Volunteer": b.assigned_volunteer or "—",
-            "Location": b.current_location or "—",
-        } for b in books])
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    with st.expander("View All Copies"):
+        if ledger:
+            led_df = pd.DataFrame([{
+                "Copy ID": l.copy_id,
+                "Title": l.title,
+                "Class": l.target_class,
+                "Status": l.status,
+                "Current Holder": l.current_holder,
+                "Holder Type": l.holder_type,
+                "Assigned": l.assigned_date,
+                "Distributed": l.distributed_date,
+            } for l in ledger])
+            st.dataframe(led_df, width=True, hide_index=True)
+        else:
+            st.info("No individual copy records yet.")
 
     st.divider()
 
     st.markdown("### 📨 Pending Requests")
 
-    pending = [r for r in requests if r.status == "Pending"]
+    pending = [r for r in req_records if r.get("Request_Status") == "Pending"]
     if pending:
         for req in pending:
             with st.container():
-                cols = st.columns([3, 2, 2, 2, 1, 1])
-                cols[0].markdown(f"**{req.book_title}**")
-                cols[1].markdown(f"{req.requester_name}")
-                cols[2].markdown(f"{req.class_needed}")
-                cols[3].markdown(f"Qty: {req.quantity}")
+                cols = st.columns([2, 2, 1.5, 1, 1, 1])
+                cols[0].markdown(f"**{req.get('Book_Title', '')}**")
+                cols[1].markdown(f"{req.get('Requester_Name', '')}")
+                cols[2].markdown(f"{req.get('School_Name', '')}")
+                cols[3].markdown(f"Qty: {req.get('Qty_Requested', 0)}")
 
-                if cols[4].button("✅ Approve", key=f"app_{req.request_id}"):
-                    _update_request_status(sheets_service, req.request_id, "Approved")
+                if cols[4].button("✅ Approve", key=f"app_{req.get('Request_ID', '')}"):
+                    _approve_request(sheets_service, req)
                     st.rerun()
 
-                if cols[5].button("❌ Reject", key=f"rej_{req.request_id}"):
-                    _update_request_status(sheets_service, req.request_id, "Rejected")
-                    _update_book_status(sheets_service, req.book_id, "Available")
+                if cols[5].button("❌ Reject", key=f"rej_{req.get('Request_ID', '')}"):
+                    _reject_request(sheets_service, req)
                     st.rerun()
     else:
         st.info("No pending requests.")
@@ -164,24 +164,25 @@ def render_admin_dashboard(sheets_service: GoogleSheetsService):
         "Name": v.get("Name", ""),
         "Type": v.get("Type", ""),
         "City": v.get("City", ""),
-        "Books Distributed": int(v.get("Books_Distributed", 0) or 0),
+        "Holding": int(v.get("Books_Holding", 0) or 0),
+        "Distributed Lifetime": int(v.get("Books_Distributed_Lifetime", 0) or 0),
         "Active": "✅" if str(v.get("Is_Active", "")).lower() == "yes" else "❌"
     } for v in vol_records])
 
-    st.dataframe(vol_df, use_container_width=True, hide_index=True)
+    st.dataframe(vol_df, width=True, hide_index=True)
 
     st.markdown("### 💰 Cost Breakdown")
-    cost_by_genre = {}
-    for b in books:
-        cost_by_genre[b.genre] = cost_by_genre.get(b.genre, 0) + b.cost_inr
+    cost_by_class = {}
+    for c in catalog:
+        cost_by_class[c.target_class] = cost_by_class.get(c.target_class, 0) + (c.total_qty * c.cost_per_unit)
 
     fig = go.Figure(data=[go.Bar(
-        x=list(cost_by_genre.keys()),
-        y=list(cost_by_genre.values()),
+        x=list(cost_by_class.keys()),
+        y=list(cost_by_class.values()),
         marker_color='#2d5a4a'
     )])
     fig.update_layout(height=350, margin=dict(t=10, b=10))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width=True)
 
 
 def _metric_card(label, value, icon):
@@ -194,17 +195,56 @@ def _metric_card(label, value, icon):
     """, unsafe_allow_html=True)
 
 
-def _update_book_status(sheets_service, book_id, status):
-    records = sheets_service.get_all_records(CONFIG.WORKSHEET_INVENTORY, use_cache=False)
-    for idx, record in enumerate(records, start=2):
-        if str(record.get("Book_ID", "")) == book_id:
-            sheets_service.update_cell(CONFIG.WORKSHEET_INVENTORY, idx, 12, status)
-            break
+def _approve_request(sheets_service, req):
+    req_id = req.get("Request_ID", "")
+    catalog_id = req.get("Catalog_ID", "")
+    qty = int(req.get("Qty_Requested", 0) or 0)
+    volunteer = req.get("Assigned_Volunteer", "")
 
-
-def _update_request_status(sheets_service, request_id, status):
     records = sheets_service.get_all_records(CONFIG.WORKSHEET_REQUESTS, use_cache=False)
     for idx, record in enumerate(records, start=2):
-        if str(record.get("Request_ID", "")) == request_id:
-            sheets_service.update_cell(CONFIG.WORKSHEET_REQUESTS, idx, 11, status)
+        if str(record.get("Request_ID", "")) == req_id:
+            sheets_service.update_cell(CONFIG.WORKSHEET_REQUESTS, idx, 11, "Approved")
+            sheets_service.update_cell(CONFIG.WORKSHEET_REQUESTS, idx, 13, qty)
+            break
+
+    cat_records = sheets_service.get_all_records(CONFIG.WORKSHEET_MASTER_CATALOG, use_cache=False)
+    for idx, record in enumerate(cat_records, start=2):
+        if str(record.get("Catalog_ID", "")) == catalog_id:
+            reserved = int(record.get("Reserved_Qty", 0) or 0)
+            dist = int(record.get("Distributed_Qty", 0) or 0)
+            sheets_service.update_cell(CONFIG.WORKSHEET_MASTER_CATALOG, idx, 11, reserved - qty)
+            sheets_service.update_cell(CONFIG.WORKSHEET_MASTER_CATALOG, idx, 10, dist + qty)
+            break
+
+    for i in range(qty):
+        copy_id = sheets_service.get_next_copy_id(catalog_id, CONFIG.WORKSHEET_STOCK_LEDGER)
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d")
+        ledger_row = [
+            copy_id, catalog_id, req.get("Book_Title", ""), req.get("Class_Needed", ""),
+            "In_Transit", volunteer or "Stock", "Volunteer" if volunteer else "Stock",
+            now, "", "", "", "", f"Approved from request {req_id}"
+        ]
+        sheets_service.append_row(CONFIG.WORKSHEET_STOCK_LEDGER, ledger_row)
+
+
+def _reject_request(sheets_service, req):
+    req_id = req.get("Request_ID", "")
+    catalog_id = req.get("Catalog_ID", "")
+    qty = int(req.get("Qty_Requested", 0) or 0)
+
+    records = sheets_service.get_all_records(CONFIG.WORKSHEET_REQUESTS, use_cache=False)
+    for idx, record in enumerate(records, start=2):
+        if str(record.get("Request_ID", "")) == req_id:
+            sheets_service.update_cell(CONFIG.WORKSHEET_REQUESTS, idx, 11, "Rejected")
+            break
+
+    cat_records = sheets_service.get_all_records(CONFIG.WORKSHEET_MASTER_CATALOG, use_cache=False)
+    for idx, record in enumerate(cat_records, start=2):
+        if str(record.get("Catalog_ID", "")) == catalog_id:
+            available = int(record.get("Available_Qty", 0) or 0)
+            reserved = int(record.get("Reserved_Qty", 0) or 0)
+            sheets_service.update_cell(CONFIG.WORKSHEET_MASTER_CATALOG, idx, 9, available + qty)
+            sheets_service.update_cell(CONFIG.WORKSHEET_MASTER_CATALOG, idx, 11, reserved - qty)
             break
