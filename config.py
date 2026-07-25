@@ -1,11 +1,14 @@
 """
 BSGP Book Redistribution Platform - Configuration
-Updated: Added Master Catalog + Stock Ledger architecture
+Architectural Design: Modular Worksheet Schemas + Dynamic Header Generation + Feature Toggles
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields
 from typing import List
 
+# ==============================================================================
+# 1. APPLICATION CONFIGURATION
+# ==============================================================================
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -15,89 +18,117 @@ class AppConfig:
     APP_SUBTITLE: str = "Dev Sanskriti Vishwavidyalaya — Bharatiya Sanskriti Gyaan Pariksha"
     APP_ICON: str = "📚"
 
+    # Google Sheets Workbook Name
     SHEET_NAME: str = "BSGP_Book_Inventory"
 
-    # NEW: Master Catalog - unique book titles with quantities
+    # Worksheet Names
     WORKSHEET_MASTER_CATALOG: str = "Master_Catalog"
-    # NEW: Stock Ledger - individual copy tracking (barcode/serial level)
     WORKSHEET_STOCK_LEDGER: str = "Stock_Ledger"
-    # Requests from students/schools
     WORKSHEET_REQUESTS: str = "Requests"
-    # Distribution log - when books actually go out
     WORKSHEET_DISTRIBUTION: str = "Distribution"
-    # Volunteers/Teachers master list
     WORKSHEET_VOLUNTEERS: str = "Volunteers"
+    WORKSHEET_SANSKAR_LIST: str = "Sanskar_List"
 
+    # Performance & API Settings
     MAX_API_CALLS_PER_MINUTE: int = 60
     CACHE_TTL_SECONDS: int = 30
     RATE_LIMIT_BACKOFF_SECONDS: float = 2.0
 
+    # Business Logic Constants
     STATUS_AVAILABLE: str = "Available"
     STATUS_RESERVED: str = "Reserved"
     STATUS_DISTRIBUTED: str = "Distributed"
-    STATUS_IN_TRANSIT: str = "In_Transit"  # NEW: with volunteer/teacher
-    STATUS_ALL: List[str] = None
+    STATUS_IN_TRANSIT: str = "In_Transit"
 
-    CLASSES: List[str] = None
-    VOLUNTEER_TYPES: List[str] = None
+    # --- FEATURE TOGGLES (Control Page Visibility in Navigation) ---
+    SHOW_HOME: bool = True
+    SHOW_SANSKAR: bool = True
+    SHOW_CATALOG: bool = False
+    SHOW_REQUEST: bool = True
+    SHOW_ADMIN: bool = False
+    SHOW_ABOUT: bool = True
+
     CURRENCY: str = "₹"
 
-    def __post_init__(self):
-        object.__setattr__(self, 'STATUS_ALL', [
-            self.STATUS_AVAILABLE,
-            self.STATUS_RESERVED,
-            self.STATUS_IN_TRANSIT,
-            self.STATUS_DISTRIBUTED
-        ])
-        object.__setattr__(self, 'CLASSES', [
-            "Class 5", "Class 6", "Class 7", 
-            "Class 8", "Class 9", "Class 10"
-        ])
-        object.__setattr__(self, 'VOLUNTEER_TYPES', [
-            "Expert Volunteer",
-            "Volunteer", 
-            "Teacher"
-        ])
+    # Native default factories eliminate __post_init__ state mutation
+    STATUS_ALL: List[str] = field(
+        default_factory=lambda: [
+            "Available",
+            "Reserved",
+            "In_Transit",
+            "Distributed",
+        ]
+    )
+
+    CLASSES: List[str] = field(
+        default_factory=lambda: [
+            "Class 5",
+            "Class 6",
+            "Class 7",
+            "Class 8",
+            "Class 9",
+            "Class 10",
+        ]
+    )
+
+    VOLUNTEER_TYPES: List[str] = field(
+        default_factory=lambda: ["Expert Volunteer", "Volunteer", "Teacher"]
+    )
+
+
+# ==============================================================================
+# 2. MODULAR WORKSHEET SCHEMAS (ZERO DUPLICATION)
+# ==============================================================================
+
+class BaseSchema:
+    """Base class providing automatic dynamic header extraction for all schemas."""
+    
+    @property
+    def headers(self) -> List[str]:
+        """Dynamically inspects dataclass fields to generate an ordered list of headers."""
+        return [getattr(self, f.name) for f in fields(self)]
 
 
 @dataclass(frozen=True)
-class ColumnSchema:
-    """Google Sheets column definitions."""
-
-    # === MASTER CATALOG: One row per unique book title ===
-    # This is your "product master" - title, class, genre, cost, total qty
-    CAT_ID: str = "Catalog_ID"           # e.g., CAT001
+class MasterCatalogSchema(BaseSchema):
+    """Schema for Master_Catalog worksheet (Product Master)."""
+    CAT_ID: str = "Catalog_ID"
     CAT_TITLE: str = "Title"
     CAT_AUTHOR: str = "Author"
     CAT_GENRE: str = "Genre"
     CAT_CLASS: str = "Class"
     CAT_LANGUAGE: str = "Language"
     CAT_COST_PER_UNIT: str = "Cost_Per_Unit_INR"
-    CAT_TOTAL_QTY: str = "Total_Qty"     # Total copies received
-    CAT_AVAILABLE_QTY: str = "Available_Qty"  # Currently in stock
-    CAT_DISTRIBUTED_QTY: str = "Distributed_Qty"  # Given out
-    CAT_RESERVED_QTY: str = "Reserved_Qty"  # With volunteers/teachers
+    CAT_TOTAL_QTY: str = "Total_Qty"
+    CAT_AVAILABLE_QTY: str = "Available_Qty"
+    CAT_DISTRIBUTED_QTY: str = "Distributed_Qty"
+    CAT_RESERVED_QTY: str = "Reserved_Qty"
     CAT_DONOR_NAME: str = "Donor_Name"
     CAT_DONOR_TYPE: str = "Donor_Type"
     CAT_NOTES: str = "Notes"
 
-    # === STOCK LEDGER: One row per physical copy ===
-    # This tracks each individual book copy
-    LEDGER_ID: str = "Copy_ID"           # e.g., BSGP001-01, BSGP001-02
-    LEDGER_CATALOG_ID: str = "Catalog_ID"  # Links to Master_Catalog
+
+@dataclass(frozen=True)
+class StockLedgerSchema(BaseSchema):
+    """Schema for Stock_Ledger worksheet (Individual Copy Tracking)."""
+    LEDGER_ID: str = "Copy_ID"
+    LEDGER_CATALOG_ID: str = "Catalog_ID"
     LEDGER_TITLE: str = "Title"
     LEDGER_CLASS: str = "Class"
-    LEDGER_STATUS: str = "Status"         # Available / In_Transit / Distributed
-    LEDGER_CURRENT_HOLDER: str = "Current_Holder"  # Volunteer/Teacher name or "Stock"
-    LEDGER_HOLDER_TYPE: str = "Holder_Type"  # Stock / Volunteer / Teacher / Student
+    LEDGER_STATUS: str = "Status"
+    LEDGER_CURRENT_HOLDER: str = "Current_Holder"
+    LEDGER_HOLDER_TYPE: str = "Holder_Type"
     LEDGER_ASSIGNED_DATE: str = "Assigned_Date"
     LEDGER_DISTRIBUTED_DATE: str = "Distributed_Date"
-    LEDGER_RECIPIENT_NAME: str = "Recipient_Name"  # Student who received it
+    LEDGER_RECIPIENT_NAME: str = "Recipient_Name"
     LEDGER_RECIPIENT_SCHOOL: str = "Recipient_School"
     LEDGER_RECIPIENT_CLASS: str = "Recipient_Class"
     LEDGER_NOTES: str = "Notes"
 
-    # === REQUESTS: Students/schools asking for books ===
+
+@dataclass(frozen=True)
+class RequestsSchema(BaseSchema):
+    """Schema for Requests worksheet (Incoming Orders/Demands)."""
     REQ_ID: str = "Request_ID"
     REQ_TIMESTAMP: str = "Timestamp"
     REQ_CATALOG_ID: str = "Catalog_ID"
@@ -106,28 +137,34 @@ class ColumnSchema:
     REQ_QTY_REQUESTED: str = "Qty_Requested"
     REQ_REQUESTER_NAME: str = "Requester_Name"
     REQ_REQUESTER_CONTACT: str = "Requester_Contact"
-    REQ_REQUESTER_TYPE: str = "Requester_Type"  # Student / Teacher / School / Volunteer
+    REQ_REQUESTER_TYPE: str = "Requester_Type"
     REQ_SCHOOL_NAME: str = "School_Name"
-    REQ_STATUS: str = "Request_Status"   # Pending / Approved / Fulfilled / Rejected
+    REQ_STATUS: str = "Request_Status"
     REQ_ASSIGNED_VOLUNTEER: str = "Assigned_Volunteer"
     REQ_QTY_FULFILLED: str = "Qty_Fulfilled"
     REQ_NOTES: str = "Notes"
 
-    # === DISTRIBUTION LOG: Record of every handover ===
+
+@dataclass(frozen=True)
+class DistributionSchema(BaseSchema):
+    """Schema for Distribution worksheet (Handover Ledger)."""
     DIST_ID: str = "Distribution_ID"
     DIST_TIMESTAMP: str = "Timestamp"
     DIST_CATALOG_ID: str = "Catalog_ID"
-    DIST_COPY_IDS: str = "Copy_IDs"      # Comma-separated ledger IDs
-    DIST_FROM: str = "From"              # Stock / Volunteer name
-    DIST_TO: str = "To"                 # Volunteer / Teacher / Student name
-    DIST_TO_TYPE: str = "To_Type"        # Volunteer / Teacher / Student
+    DIST_COPY_IDS: str = "Copy_IDs"
+    DIST_FROM: str = "From"
+    DIST_TO: str = "To"
+    DIST_TO_TYPE: str = "To_Type"
     DIST_SCHOOL: str = "School"
     DIST_QTY: str = "Qty"
     DIST_CLASS: str = "Class"
     DIST_VOLUNTEER: str = "Volunteer_Involved"
     DIST_NOTES: str = "Notes"
 
-    # === VOLUNTEERS ===
+
+@dataclass(frozen=True)
+class VolunteersSchema(BaseSchema):
+    """Schema for Volunteers worksheet (User Directory)."""
     VOL_ID: str = "Volunteer_ID"
     VOL_NAME: str = "Name"
     VOL_TYPE: str = "Type"
@@ -135,40 +172,47 @@ class ColumnSchema:
     VOL_EMAIL: str = "Email"
     VOL_CITY: str = "City"
     VOL_ACTIVE: str = "Is_Active"
-    VOL_BOOKS_HOLDING: str = "Books_Holding"  # Current count
+    VOL_BOOKS_HOLDING: str = "Books_Holding"
     VOL_BOOKS_DISTRIBUTED: str = "Books_Distributed_Lifetime"
 
 
-# === HEADERS FOR EACH WORKSHEET ===
+@dataclass(frozen=True)
+class SanskarListSchema(BaseSchema):
+    """Schema for Sanskar_List worksheet (Event Tracking)."""
+    SANSKAR_NAME: str = "Sanskar_Name"
+    SANSKAR_TIMESTAMP: str = "Timestamp"
+    SANSKAR_OCCASION: str = "Occasion"
+    SANSKAR_REQUESTER_NAME: str = "Requester_Name"
+    SANSKAR_REQUESTER_CONTACT: str = "Requester_Contact"
+    SANSKAR_REQUESTER_TYPE: str = "Requester_Type"
+    SANSKAR_NO_OF_PEOPLE: str = "No_of_People"
+    SANSKAR_STATUS: str = "Request_Status"
+    SANSKAR_ASSIGNED_VOLUNTEER: str = "Assigned_Volunteer"
+    SANSKAR_NOTES: str = "Notes"
 
-MASTER_CATALOG_HEADERS = [
-    "Catalog_ID", "Title", "Author", "Genre", "Class", "Language",
-    "Cost_Per_Unit_INR", "Total_Qty", "Available_Qty", "Distributed_Qty",
-    "Reserved_Qty", "Donor_Name", "Donor_Type", "Notes"
-]
 
-STOCK_LEDGER_HEADERS = [
-    "Copy_ID", "Catalog_ID", "Title", "Class", "Status",
-    "Current_Holder", "Holder_Type", "Assigned_Date", "Distributed_Date",
-    "Recipient_Name", "Recipient_School", "Recipient_Class", "Notes"
-]
+# ==============================================================================
+# 3. UNIFIED CONTAINER & SINGLETON INSTANTIATION
+# ==============================================================================
 
-REQUESTS_HEADERS = [
-    "Request_ID", "Timestamp", "Catalog_ID", "Book_Title", "Class_Needed",
-    "Qty_Requested", "Requester_Name", "Requester_Contact", "Requester_Type",
-    "School_Name", "Request_Status", "Assigned_Volunteer", "Qty_Fulfilled", "Notes"
-]
+class ColumnSchema:
+    """Master Column Schema Container linking all individual worksheet schemas."""
+    CATALOG = MasterCatalogSchema()
+    LEDGER = StockLedgerSchema()
+    REQUESTS = RequestsSchema()
+    DISTRIBUTION = DistributionSchema()
+    VOLUNTEERS = VolunteersSchema()
+    SANSKAR = SanskarListSchema()
 
-DISTRIBUTION_HEADERS = [
-    "Distribution_ID", "Timestamp", "Catalog_ID", "Copy_IDs",
-    "From", "To", "To_Type", "School", "Qty", "Class",
-    "Volunteer_Involved", "Notes"
-]
 
-VOLUNTEERS_HEADERS = [
-    "Volunteer_ID", "Name", "Type", "Contact", "Email", "City",
-    "Is_Active", "Books_Holding", "Books_Distributed_Lifetime"
-]
-
+# App Singletons to import across services
 CONFIG = AppConfig()
 SCHEMA = ColumnSchema()
+
+# Convenient dynamic header exports for Sheet Initialization
+MASTER_CATALOG_HEADERS = SCHEMA.CATALOG.headers
+STOCK_LEDGER_HEADERS = SCHEMA.LEDGER.headers
+REQUESTS_HEADERS = SCHEMA.REQUESTS.headers
+DISTRIBUTION_HEADERS = SCHEMA.DISTRIBUTION.headers
+VOLUNTEERS_HEADERS = SCHEMA.VOLUNTEERS.headers
+SANSKAR_HEADERS = SCHEMA.SANSKAR.headers

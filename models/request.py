@@ -1,64 +1,56 @@
-"""
-BSGP Book Request Data Model
-"""
-
 from dataclasses import dataclass
-
+from typing import Any, Dict, List, Optional
+from config import SCHEMA
 
 @dataclass
 class BookRequest:
-    """Represents a book request."""
-
     request_id: str
     timestamp: str
-    book_id: str
+    catalog_id: str
     book_title: str
-    requester_name: str
-    requester_contact: str
+    class_needed: str = ""
+    qty_requested: int = 1
+    requester_name: str = ""
+    requester_contact: str = ""
     requester_type: str = "Student"
     school_name: str = ""
-    class_needed: str = ""
-    quantity: int = 1
     status: str = "Pending"
     assigned_volunteer: str = ""
-    delivery_date: str = ""
+    qty_fulfilled: int = 0
     notes: str = ""
+    row_index: Optional[int] = None
 
     @property
-    def is_pending(self) -> bool:
-        return self.status == "Pending"
-
-    @property
-    def is_approved(self) -> bool:
-        return self.status == "Approved"
-
-    @property
-    def is_fulfilled(self) -> bool:
-        return self.status == "Fulfilled"
+    def status_clean(self) -> str:
+        return self.status.strip().title()
 
     @classmethod
-    def from_row(cls, row: dict) -> "BookRequest":
+    def from_row(cls, row: Dict[str, Any], row_idx: Optional[int] = None) -> "BookRequest":
+        s = SCHEMA.REQUESTS
+        parse_int = lambda key, default: int(row.get(key) or default) if str(row.get(key, "")).isdigit() else default
+        
         return cls(
-            request_id=str(row.get("Request_ID", "")),
-            timestamp=str(row.get("Timestamp", "")),
-            book_id=str(row.get("Book_ID", "")),
-            book_title=str(row.get("Book_Title", "")),
-            requester_name=str(row.get("Requester_Name", "")),
-            requester_contact=str(row.get("Requester_Contact", "")),
-            requester_type=str(row.get("Requester_Type", "Student")),
-            school_name=str(row.get("School_Name", "")),
-            class_needed=str(row.get("Class_Needed", "")),
-            quantity=int(row.get("Quantity", 1) or 1),
-            status=str(row.get("Request_Status", "Pending")),
-            assigned_volunteer=str(row.get("Assigned_Volunteer", "")),
-            delivery_date=str(row.get("Delivery_Date", "")),
-            notes=str(row.get("Notes", "")),
+            request_id=str(row.get(s.REQ_ID, "")),
+            timestamp=str(row.get(s.REQ_TIMESTAMP, "")),
+            catalog_id=str(row.get(s.REQ_CATALOG_ID) or row.get("Book_ID", "")),
+            book_title=str(row.get(s.REQ_TITLE, "")),
+            class_needed=str(row.get(s.REQ_CLASS_NEEDED, "")),
+            qty_requested=parse_int(s.REQ_QTY_REQUESTED, 1),
+            requester_name=str(row.get(s.REQ_REQUESTER_NAME, "")),
+            requester_contact=str(row.get(s.REQ_REQUESTER_CONTACT, "")),
+            requester_type=str(row.get(s.REQ_REQUESTER_TYPE, "Student")),
+            school_name=str(row.get(s.REQ_SCHOOL_NAME, "")),
+            status=str(row.get(s.REQ_STATUS, "Pending")),
+            assigned_volunteer=str(row.get(s.REQ_ASSIGNED_VOLUNTEER, "")),
+            qty_fulfilled=parse_int(s.REQ_QTY_FULFILLED, 0),
+            notes=str(row.get(s.REQ_NOTES, "")),
+            row_index=row_idx,
         )
 
-    def to_row(self) -> list:
+    def to_row(self) -> List[Any]:
         return [
-            self.request_id, self.timestamp, self.book_id, self.book_title,
-            self.requester_name, self.requester_contact, self.requester_type,
-            self.school_name, self.class_needed, self.quantity, self.status,
-            self.assigned_volunteer, self.delivery_date, self.notes,
+            self.request_id, self.timestamp, self.catalog_id, self.book_title,
+            self.class_needed, self.qty_requested, self.requester_name,
+            self.requester_contact, self.requester_type, self.school_name,
+            self.status, self.assigned_volunteer, self.qty_fulfilled, self.notes
         ]
