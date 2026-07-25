@@ -2,6 +2,7 @@
 credentials.json
 .env
 *.json
+.streamlit/
 
 # Ignore Python virtual environment and cache files
 .venv/

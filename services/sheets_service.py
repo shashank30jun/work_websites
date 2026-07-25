@@ -1,6 +1,6 @@
 """
 Google Sheets Service - Thread-safe, rate-limited API wrapper
-Updated: Supports Master Catalog + Stock Ledger architecture
+Updated: Supports Streamlit Secrets (st.secrets) & Master Catalog architecture
 """
 
 import os
@@ -11,6 +11,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from functools import wraps
 
+import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -80,11 +81,10 @@ class GoogleSheetsService:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, credentials_path=None, sheet_name="BSGP_Book_Inventory"):
+    def __init__(self, sheet_name="BSGP_Book_Inventory"):
         if self._initialized:
             return
 
-        self.credentials_path = credentials_path or os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
         self.sheet_name = sheet_name
         self.rate_limiter = RateLimiter(max_calls=60, window_seconds=60)
         self._client = None
@@ -104,20 +104,12 @@ class GoogleSheetsService:
                 "https://www.googleapis.com/auth/drive",
             ]
 
-            creds_data = self.credentials_path
-            if os.path.exists(self.credentials_path):
-                with open(self.credentials_path, 'r') as f:
-                    creds_data = f.read()
-            elif isinstance(creds_data, str) and creds_data.startswith('{'):
-                pass
+            # ✅ Pull GCP Service Account info natively from Streamlit secrets (.streamlit/secrets.toml)
+            if "gcp_service_account" in st.secrets:
+                creds_info = dict(st.secrets["gcp_service_account"])
             else:
-                env_creds = os.getenv("GOOGLE_CREDENTIALS_JSON")
-                if env_creds:
-                    creds_data = env_creds
-                else:
-                    raise FileNotFoundError(f"Credentials not found at {self.credentials_path}")
+                raise KeyError("Missing [gcp_service_account] block in .streamlit/secrets.toml")
 
-            creds_info = json.loads(creds_data) if isinstance(creds_data, str) else creds_data
             credentials = Credentials.from_service_account_info(creds_info, scopes=scopes)
             self._client = gspread.authorize(credentials)
             self._spreadsheet = self._client.open(self.sheet_name)
@@ -126,7 +118,7 @@ class GoogleSheetsService:
                 self._worksheets[ws.title] = ws
 
         except Exception as e:
-            raise ConnectionError(f"Failed to connect to Google Sheets: {str(e)}")
+            raise ConnectionError(f"Failed to connect to Google Sheets via Streamlit Secrets: {str(e)}")
 
     def _get_worksheet(self, name: str):
         if name not in self._worksheets:
@@ -198,9 +190,7 @@ class GoogleSheetsService:
     def batch_update(self, worksheet_name: str, updates: List[tuple]):
         """Batch update multiple cells at once for efficiency."""
         ws = self._get_worksheet(worksheet_name)
-        cells = []
-        for row, col, value in updates:
-            cells.append(gspread.Cell(row, col, value))
+        cells = [gspread.Cell(row, col, value) for row, col, value in updates]
         ws.update_cells(cells, value_input_option='USER_ENTERED')
         self._clear_cache(f"records_{worksheet_name}")
 

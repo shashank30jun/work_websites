@@ -1,18 +1,13 @@
 """
 BSGP Book Redistribution Platform
-Architecture: Clean Dynamic Page Router with Lazy-Loaded View Modules
+Architecture: Clean Dynamic Page Router with Lazy-Loaded View Modules (st.secrets compatible)
 """
 
 import importlib
-import os
 import streamlit as st
-from dotenv import load_dotenv
 
 from config import CONFIG, SCHEMA
 from services.sheets_service import GoogleSheetsService
-
-load_dotenv()
-
 st.set_page_config(
     page_title=CONFIG.APP_TITLE,
     page_icon=CONFIG.APP_ICON,
@@ -25,16 +20,10 @@ st.set_page_config(
 # 1. SERVICES & INITIALIZATION
 # ==============================================================================
 
-
 @st.cache_resource
 def get_sheets_service():
-    """Singleton Google Sheets API Service Handler."""
-    return GoogleSheetsService(
-        credentials_path=os.getenv(
-            "GOOGLE_CREDENTIALS_PATH", "credentials.json"
-        ),
-        sheet_name=CONFIG.SHEET_NAME,
-    )
+    """Singleton Google Sheets API Service Handler via Streamlit Secrets."""
+    return GoogleSheetsService(sheet_name=CONFIG.SHEET_NAME)
 
 
 def init_sheets(sheets_service):
@@ -111,7 +100,6 @@ def load_and_render_view(page_title: str, sheets_service):
         return
 
     try:
-        # Standard dynamic import (Python's internal sys.modules handles caching automatically)
         module = importlib.import_module(page_info["module"])
         view_fn = getattr(module, page_info["function"])
         view_fn(sheets_service)
@@ -122,7 +110,6 @@ def load_and_render_view(page_title: str, sheets_service):
 # ==============================================================================
 # 3. ROUTER & MAIN ENTRY POINT
 # ==============================================================================
-
 
 def render_sidebar():
     """Renders platform navigation sidebar with active routes only."""

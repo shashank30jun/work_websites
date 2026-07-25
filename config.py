@@ -1,25 +1,26 @@
 """
 BSGP Book Redistribution Platform - Configuration
-Architectural Design: Modular Worksheet Schemas + Dynamic Header Generation + Feature Toggles
+Architectural Design: Modular Worksheet Schemas + Dynamic Header Generation + st.secrets
 """
 
 from dataclasses import dataclass, field, fields
 from typing import List
+import streamlit as st
 
 # ==============================================================================
-# 1. APPLICATION CONFIGURATION
+# 1. APPLICATION CONFIGURATION (Fetched securely from st.secrets)
 # ==============================================================================
 
 @dataclass(frozen=True)
 class AppConfig:
-    """Application-wide configuration constants."""
+    """Application-wide configuration constants loaded via st.secrets."""
 
     APP_TITLE: str = "BSGP Book Redistribution Platform"
     APP_SUBTITLE: str = "Dev Sanskriti Vishwavidyalaya — Bharatiya Sanskriti Gyaan Pariksha"
     APP_ICON: str = "📚"
 
-    # Google Sheets Workbook Name
-    SHEET_NAME: str = "BSGP_Book_Inventory"
+    # Google Sheets Workbook Name (Safely fetched from st.secrets or defaults)
+    SHEET_NAME: str = st.secrets.get("App", {}).get("SHEET_NAME", "BSGP_Book_Inventory")
 
     # Worksheet Names
     WORKSHEET_MASTER_CATALOG: str = "Master_Catalog"
@@ -30,8 +31,8 @@ class AppConfig:
     WORKSHEET_SANSKAR_LIST: str = "Sanskar_List"
 
     # Performance & API Settings
-    MAX_API_CALLS_PER_MINUTE: int = 60
-    CACHE_TTL_SECONDS: int = 30
+    MAX_API_CALLS_PER_MINUTE: int = int(st.secrets.get("App", {}).get("MAX_API_CALLS_PER_MINUTE", 60))
+    CACHE_TTL_SECONDS: int = int(st.secrets.get("Admin", {}).get("CACHE_TTL_SECONDS", 30))
     RATE_LIMIT_BACKOFF_SECONDS: float = 2.0
 
     # Business Logic Constants
@@ -194,6 +195,7 @@ class SanskarListSchema(BaseSchema):
     SANSKAR_STATUS: str = "Request_Status"
     ASSIGNED_VOLUNTEER: str = "Assigned_Volunteer"
     NOTES: str = "Notes"
+
 
 # ==============================================================================
 # 3. UNIFIED CONTAINER & SINGLETON INSTANTIATION
