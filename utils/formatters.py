@@ -1,7 +1,37 @@
 """
 Display formatting utilities
+Formatting and Identifier Utilities
 """
 
+from datetime import datetime
+
+
+def generate_sequential_id(
+    prefix: str, records: list, id_attribute: str = "req_id"
+) -> str:
+    """
+    Generic sequential ID generator.
+    Format: <PREFIX>_<SEQ_4DIGIT>_<DDMMYYYY>
+    Example: SNKQR_0001_26072026
+    """
+    date_str = datetime.now().strftime("%d%m%Y")
+    max_seq = 0
+
+    if records:
+        for r in records:
+            req_id = r.get(id_attribute, "") if isinstance(r, dict) else getattr(r, id_attribute, "")
+            if req_id and isinstance(req_id, str) and "_" in req_id:
+                parts = req_id.split("_")
+                if len(parts) >= 2 and parts[1].isdigit():
+                    max_seq = max(max_seq, int(parts[1]))
+
+        if max_seq == 0:
+            max_seq = len(records)
+
+    next_seq = max_seq + 1
+    formatted_seq = str(next_seq).zfill(4)  # 0001, 0002, 0003...
+
+    return f"{prefix}_{formatted_seq}_{date_str}"
 
 def get_status_badge(status: str) -> str:
     colors = {

@@ -41,7 +41,7 @@ class AppConfig:
     STATUS_IN_TRANSIT: str = "In_Transit"
 
     # --- FEATURE TOGGLES (Control Page Visibility in Navigation) ---
-    SHOW_HOME: bool = True
+    SHOW_HOME: bool = False
     SHOW_SANSKAR: bool = True
     SHOW_CATALOG: bool = False
     SHOW_REQUEST: bool = False
@@ -179,17 +179,21 @@ class VolunteersSchema(BaseSchema):
 @dataclass(frozen=True)
 class SanskarListSchema(BaseSchema):
     """Schema for Sanskar_List worksheet (Event Tracking)."""
+    REQ_ID: str = "Sanskar_Req_ID"
     SANSKAR_NAME: str = "Sanskar_Name"
-    SANSKAR_TIMESTAMP: str = "Timestamp"
-    SANSKAR_OCCASION: str = "Occasion"
-    SANSKAR_REQUESTER_NAME: str = "Requester_Name"
-    SANSKAR_REQUESTER_CONTACT: str = "Requester_Contact"
-    SANSKAR_REQUESTER_TYPE: str = "Requester_Type"
-    SANSKAR_NO_OF_PEOPLE: str = "No_of_People"
+    SANSKAR_DATE: str = "Sanskar_Date"
+    CREATED_TIMESTAMP: str = "Created_Timestamp"
+    REQUESTER_NAME: str = "Requester_Name"
+    RELATION_TYPE: str = "Relation_Type"
+    GUARDIAN_NAME: str = "Guardian_Name"
+    REQUESTER_CONTACT: str = "Requester_Contact"
+    REQUESTER_TYPE: str = "Requester_Type"
+    ADDRESS: str = "Address"
+    PIN_CODE: str = "Pin_Code"
+    NO_OF_PEOPLE: str = "No_of_People"
     SANSKAR_STATUS: str = "Request_Status"
-    SANSKAR_ASSIGNED_VOLUNTEER: str = "Assigned_Volunteer"
-    SANSKAR_NOTES: str = "Notes"
-
+    ASSIGNED_VOLUNTEER: str = "Assigned_Volunteer"
+    NOTES: str = "Notes"
 
 # ==============================================================================
 # 3. UNIFIED CONTAINER & SINGLETON INSTANTIATION
